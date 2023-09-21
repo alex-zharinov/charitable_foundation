@@ -5,20 +5,40 @@ from aiogoogle import Aiogoogle
 from app.core.config import settings
 
 FORMAT = "%Y/%m/%d %H:%M:%S"
+SPREADSHEET_ROWCOUNT_DRAFT = 100
+SPREADSHEET_COLUMNCOUNT_DRAFT = 11
+SPREADSHEET_BODY = dict(
+    properties=dict(
+        title='Отчет на ',
+        locale='ru_RU',
+    ),
+    sheets=[dict(properties=dict(
+        sheetType='GRID',
+        sheetId=0,
+        title='Лист1',
+        gridProperties=dict(
+            rowCount=SPREADSHEET_ROWCOUNT_DRAFT,
+            columnCount=SPREADSHEET_COLUMNCOUNT_DRAFT
+        )
+    ))]
+)
+TABLE_VALUES_DRAFT = [
+    ['Отчет от', ],
+    ['Топ проектов по скорости закрытия'],
+    ['Название проекта', 'Время сбора', 'Описание']
+]
+ROW_COLUMN_COUNT_TOO_BIG = ('В ваших данных строк - {rows_value}, а'
+                            'столбцов - {columns_value}, но'
+                            'количество строк не'
+                            'должно превышать {rowcount_draft}, '
+                            'a столбцов - {columncount_draft}')
 
 
 async def spreadsheets_create(wrapper_services: Aiogoogle) -> str:
     now_date_time = datetime.now().strftime(FORMAT)
     service = await wrapper_services.discover('sheets', 'v4')
-    spreadsheet_body = {
-        'properties': {'title': f'Отчет на {now_date_time}',
-                       'locale': 'ru_RU'},
-        'sheets': [{'properties': {'sheetType': 'GRID',
-                                   'sheetId': 0,
-                                   'title': 'Лист1',
-                                   'gridProperties': {'rowCount': 100,
-                                                      'columnCount': 3}}}]
-    }
+    spreadsheet_body = SPREADSHEET_BODY.copy()
+    spreadsheet_body['properties']['title'] += now_date_time
     response = await wrapper_services.as_service_account(
         service.spreadsheets.create(json=spreadsheet_body)
     )
@@ -49,19 +69,37 @@ async def spreadsheets_update_value(
 ) -> None:
     now_date_time = datetime.now().strftime(FORMAT)
     service = await wrapper_services.discover('sheets', 'v4')
+    table_values = TABLE_VALUES_DRAFT.copy()
+    table_values[0].append(now_date_time)
     table_values = [
-        ['Отчет от', now_date_time],
-        ['Топ проектов по скорости закрытия'],
-        ['Название проекта', 'Время сбора', 'Описание']
+        *table_values,
+        *[
+            list(
+                map(
+                    str, [
+                        project.name,
+                        project.close_date - project.create_date,
+                        project.description
+                    ]
+                )
+            ) for project in projects
+        ]
     ]
-    for proj in projects:
-        new_row = [proj.name, str(proj.close_date - proj.create_date), proj.description]
-        table_values.append(new_row)
-
     update_body = {
         'majorDimension': 'ROWS',
         'values': table_values
     }
+    columns_value = max(len(items_to_count)
+                        for items_to_count in table_values)
+    rows_value = len(table_values)
+    if (SPREADSHEET_ROWCOUNT_DRAFT < rows_value or
+            SPREADSHEET_COLUMNCOUNT_DRAFT < columns_value):
+        raise ValueError(ROW_COLUMN_COUNT_TOO_BIG.format(
+            rows_value=rows_value,
+            columns_value=columns_value,
+            rowcount_draft=SPREADSHEET_ROWCOUNT_DRAFT,
+            columncount_draft=SPREADSHEET_COLUMNCOUNT_DRAFT))
+
     await wrapper_services.as_service_account(
         service.spreadsheets.values.update(
             spreadsheetId=spreadsheetid,

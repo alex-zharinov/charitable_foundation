@@ -23,7 +23,7 @@ class CharityProject(Base):
     @validates('full_amount')
     def validate_full_amount(self, key, value):
         if value < 1:
-            raise ValueError('Требуемуя сумма должна быть больше 0!')
+            raise ValueError('Требуемая сумма должна быть больше 0!')
         return value
 
     @validates('name')
